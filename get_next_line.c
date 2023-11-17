@@ -6,84 +6,113 @@
 /*   By: myokono <myokono@student.42tokyo.jp>       +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2023/10/15 17:40:04 by myokono           #+#    #+#             */
-/*   Updated: 2023/10/19 02:29:47 by myokono          ###   ########.fr       */
+/*   Updated: 2023/11/17 12:35:16 by myokono          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "get_next_line.h"
 
-static char	*read_from_fd(int fd, char *buf, char *storage)
+static int find_newline(const char *buffer)
 {
-	int		bytes_read;
-
-	while ((bytes_read = read(fd, buf, 4096)) > 0)
-	{
-		buf[bytes_read] = '\0';
-		if (storage)
-		{
-			char *temp = storage;
-			storage = ft_strjoin(storage, buf);
-			free(temp);
-		}
-		else
-			storage = ft_strdup(buf);
-		if (ft_strchr(storage, '\n'))
-			break;
-	}
-	free(buf);
-	return (storage);
+    int i = 0;
+    while (buffer[i])
+    {
+        if (buffer[i] == '\n')
+            return i;
+        i++;
+    }
+    return -1;
 }
 
-char		*get_next_line(int fd)
+static char *append_line(char *line, const char *buffer, int newline_index)
 {
-	static char	*storage;
-	char		*buf;
-	char		*newline;
-	char		*ret;
+    int line_len = 0, buffer_len = 0, i = 0;
+    char *new_line;
 
-	if (fd < 0 || !(buf = (char *)malloc(4097)))
-		return (NULL);
-	storage = read_from_fd(fd, buf, storage);
-	if (!storage || !*storage)
-	{
-		if (storage)
-		{
-			free(storage);
-			storage = NULL;
-		}
-		return (NULL);
-	}
-	if ((newline = ft_strchr(storage, '\n')))
-	{
-		*newline = '\0';
-		ret = ft_strdup(storage);
-		if (*(newline + 1) != '\0')
-		{
-			char *temp = storage;
-			storage = ft_strdup(newline + 1);
-			free(temp);
-		}
-		else
-		{
-			free(storage);
-			storage = NULL;
-		}
-	}
-	else
-	{
-		ret = ft_strdup(storage);
-		free(storage);
-		storage = NULL;
-	}
-	return (ret);
+    while (line && line[line_len])
+        line_len++;
+    while (buffer[i] && (newline_index < 0 || i <= newline_index))
+    {
+        buffer_len++;
+        i++;
+    }
+
+    new_line = malloc(line_len + buffer_len + 1);
+    if (!new_line)
+        return NULL;
+    i = -1;
+    while (++i < line_len)
+        new_line[i] = line[i];
+    i = -1;
+    while (++i < buffer_len)
+        new_line[line_len + i] = buffer[i];
+    new_line[line_len + buffer_len] = '\0';
+
+    free(line);
+    return new_line;
 }
 
+static int update_buffer(char **buffer, int newline_index, int read_status)
+{
+    //char *new_buffer;
+    int i = 0, j = newline_index + 1;
 
+    while (j < read_status)
+    {
+        (*buffer)[i] = (*buffer)[j];
+        i++; j++;
+    }
+    (*buffer)[i] = '\0';
 
-// #include<stdio.h>
+    return i;
+}
 
-// int main ()
-// {
-// 	printf("nl:%s\n",get_next_line(1));
-// 	return (0);
-// }
+static char *finalize_line(char **line, int read_status)
+{
+    if (read_status < 0 || (read_status == 0 && (!*line || **line == '\0')))
+    {
+        free(*line);
+        return NULL;
+    }
+    return *line;
+}
+
+char *get_next_line(int fd)
+{
+    static char *buffer;
+    char *line = NULL;
+    int read_status;
+    int newline_index;
+    int buffer_len;
+    
+    if (fd < 0 || BUFFER_SIZE <= 0)
+        return (NULL);
+
+    if (!buffer)
+    {
+        buffer = malloc(BUFFER_SIZE + 1);
+        if (!buffer)
+            return (NULL);
+    }
+
+    while (1)
+    {
+        read_status = read(fd, buffer, BUFFER_SIZE);
+        if (read_status <= 0)
+        {
+            free(buffer);
+            return(NULL);
+        }
+        buffer[read_status] = '\0';
+        newline_index = find_newline(buffer);
+        line = append_line(line, buffer, newline_index);
+        if (newline_index >= 0)
+        {
+            buffer_len = update_buffer(&buffer, newline_index, read_status);
+            if (buffer_len <= 0)
+                break;
+        }
+    }
+
+    return finalize_line(&line, read_status);
+}
